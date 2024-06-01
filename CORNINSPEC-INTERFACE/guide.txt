@@ -1,0 +1,159 @@
+การออกแบบระบบตามแนวทางที่ 2 สำหรับ CORNINSPEC สามารถปรับปรุงและเพิ่มรายละเอียดเพื่อให้ระบบทำงานได้สมบูรณ์และมีประสิทธิภาพมากขึ้นตามโครงสร้างที่คุณได้กำหนดไว้ นี่คือการออกแบบที่ปรับปรุงแล้ว:
+
+โครงสร้างของระบบ
+Frontend
+React: สำหรับการสร้าง UI
+Python: สำหรับการเชื่อมต่อกับ weight scale และ Camera
+Backend
+CORNINSPEC-DB: ทำหน้าที่ในการให้บริการ auth
+CORNINSPEC-PREDICT: ทำหน้าที่ predict และส่งค่าเก็บใน PREDICT Database
+CORNINSPEC-PREDICTION_RESULT: ทำหน้าที่เป็น Service ของ PREDICT Database
+CORNINSPEC-INTERFACE: ทำหน้าที่เป็น Interface โดยใช้ RabbitMQ สำหรับการสื่อสารกับ SAP และฐานข้อมูลอื่น ๆ
+RabbitMQ: สำหรับการจัดการ messaging
+ขั้นตอนการทำงาน
+CORNINSPEC-INTERFACE
+Request Flow:
+
+Frontend ส่ง request ไปที่ /interface
+CORNINSPEC-INTERFACE รับ request และส่งข้อความไปยัง RabbitMQ
+RabbitMQ Event Flow:
+
+Event 1: ดึงข้อมูลจาก CORNINSPEC-PREDICTION_RESULT และเก็บลงใน Interface-db
+Event 2: ส่ง request /login ไปยัง SAP เพื่อขอ token (sync) และเก็บ token ใน Interface-db
+Event 3: โหลด token และส่ง request /sample-no ไปยัง SAP เพื่อขอหมายเลข Sample แล้ว update ค่า Sample No ลงในฐานข้อมูล
+Event 4: โหลดข้อมูลและ token แล้วส่งข้อมูลไปยัง SAP (async) ผ่าน /interface-sap
+SAP Response: ระบบ SAP ตอบกลับผลการ Interface และนำค่าที่ได้ update ลงใน Interface-db
+การปรับปรุงการออกแบบ
+การจัดการการสื่อสารกับ SAP:
+
+ใช้ axios หรือ node-fetch สำหรับการสื่อสารกับ SAP API
+จัดการการ retry เมื่อเกิดข้อผิดพลาดในการสื่อสารกับ SAP
+การจัดการ RabbitMQ:
+
+ใช้ amqplib สำหรับการสื่อสารกับ RabbitMQ
+ใช้การทำงานแบบ asynchronous เพื่อเพิ่มประสิทธิภาพในการจัดการข้อความ
+การเชื่อมต่อฐานข้อมูล:
+
+ใช้ pg หรือ sequelize สำหรับการเชื่อมต่อกับ PostgreSQL
+จัดการการเชื่อมต่อฐานข้อมูลให้มีความปลอดภัยและมีประสิทธิภาพ
+ตัวอย่างโค้ดการตั้งค่า
+CORNINSPEC-INTERFACE
+javascript
+Copy code
+const express = require('express');
+const amqp = require('amqplib/callback_api');
+const axios = require('axios');
+const { Pool } = require('pg');
+
+const app = express();
+app.use(express.json());
+
+const pool = new Pool({
+    user: 'postgres',
+    host: 'interface-db',
+    database: 'interface',
+    password: 'password',
+    port: 5434,
+});
+
+// Function to send message to RabbitMQ
+function sendMessage(queue, message) {
+    amqp.connect('amqp://rabbitmq', (error0, connection) => {
+        if (error0) {
+            throw error0;
+        }
+        connection.createChannel((error1, channel) => {
+            if (error1) {
+                throw error1;
+            }
+            channel.assertQueue(queue, { durable: false });
+            channel.sendToQueue(queue, Buffer.from(message));
+            console.log(`Sent ${message} to ${queue}`);
+        });
+        setTimeout(() => {
+            connection.close();
+        }, 500);
+    });
+}
+
+// Route to handle interface requests
+app.post('/interface', (req, res) => {
+    const message = JSON.stringify(req.body);
+    sendMessage('interfaceQueue', message);
+    res.json({ status: 'Message sent to RabbitMQ' });
+});
+
+app.listen(8008, () => {
+    console.log('CORNINSPEC-INTERFACE running on port 8008');
+});
+การจัดการ RabbitMQ Events
+javascript
+Copy code
+amqp.connect('amqp://rabbitmq', (error0, connection) => {
+    if (error0) {
+        throw error0;
+    }
+    connection.createChannel((error1, channel) => {
+        if (error1) {
+            throw error1;
+        }
+        const queue = 'interfaceQueue';
+
+        channel.assertQueue(queue, { durable: false });
+        channel.consume(queue, async (msg) => {
+            const data = JSON.parse(msg.content.toString());
+            console.log(`Received ${data}`);
+
+            // Handle different events
+            switch (data.eventType) {
+                case 'Event1':
+                    // Fetch data from CORNINSPEC-PREDICTION_RESULT and save to Interface-db
+                    break;
+                case 'Event2':
+                    // '/login' SAP to request token (sync)
+                    const token = await axios.post('https://sap.example.com/login', {
+                        username: 'user',
+                        password: 'pass',
+                    });
+                    await pool.query('INSERT INTO tokens(token) VALUES($1)', [token.data.token]);
+                    break;
+                case 'Event3':
+                    // '/sample-no' SAP to request sample number
+                    break;
+                case 'Event4':
+                    // '/interface-sap' to send data to SAP (async)
+                    break;
+                default:
+                    console.log('Unknown event type');
+            }
+
+            channel.ack(msg);
+        });
+    });
+});
+การจัดการฐานข้อมูล
+javascript
+Copy code
+const pool = new Pool({
+    user: 'postgres',
+    host: 'interface-db',
+    database: 'interface',
+    password: 'password',
+    port: 5434,
+});
+
+module.exports = pool;
+การออกแบบนี้ช่วยให้ระบบมีความยืดหยุ่นและสามารถปรับขยายได้ง่าย ๆ และใช้ Node.js เป็นหลักสำหรับการพัฒนาระบบทั้งหมด หากมีคำถามหรือข้อสงสัยเพิ่มเติม สามารถสอบถามได้ครับ
+
+
+|--.env
+|--CORNINSPEC-INTERFACE
+     |--src
+       |--config
+       |--middleware
+       |--models
+       |--routes
+       |--tasks
+       |--index.js
+    |--Dokerfile
+ช่วยออกแบบCodeตามโครงสร้างนี้ให้หน่อย

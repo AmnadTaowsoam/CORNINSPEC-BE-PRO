@@ -1,0 +1,216 @@
+version: '3.8'
+
+services:
+############# RabbitMQ-Service #################
+  rabbitmq:
+    image: rabbitmq:3-management
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_DEFAULT_USER}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_DEFAULT_PASS}
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    volumes:
+      - "rabbitmq_data:/var/lib/rabbitmq"
+      - rabbitmq-server -load_definitions /etc/rabbitmq/definitions.json
+    networks:
+      - corninspect-net
+    healthcheck:
+      test: ["CMD", "rabbitmqctl", "status"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+    restart: on-failure
+
+  ############# PostgreSQL database #################
+  users-db:
+    image: postgres:latest
+    environment:
+      POSTGRES_DB: ${USERS_DB_NAME}
+      POSTGRES_USER: ${USERS_DB_USERNAME}
+      POSTGRES_PASSWORD: ${USERS_DB_PASSWORD}
+    volumes:
+      - corninspecvolume-data:/var/lib/postgresql/data
+      - ./db/init/users.sql:/docker-entrypoint-initdb.d/users.sql
+    ports:
+      - "${USERS_DB_PORT}:5432"
+    networks:
+      - corninspect-net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${USERS_DB_USERNAME} -d ${USERS_DB_NAME}"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    restart: on-failure
+    deploy:
+      resources:
+        limits:
+          cpus: '1'
+          memory: 1G
+
+  prediction-db:
+    image: postgres:latest
+    environment:
+      POSTGRES_DB: ${PREDICT_DB_NAME}
+      POSTGRES_USER: ${PREDICT_DB_USERNAME}
+      POSTGRES_PASSWORD: ${PREDICT_DB_PASSWORD}
+    volumes:
+      - predictionvolume-data:/var/lib/postgresql/data
+      - ./db/init/prediction.sql:/docker-entrypoint-initdb.d/prediction.sql
+    ports:
+      - "${PREDICT_DB_PORT}:5432"
+    networks:
+      - corninspect-net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${PREDICT_DB_USERNAME} -d ${PREDICT_DB_NAME}"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    restart: on-failure
+    deploy:
+      resources:
+        limits:
+          cpus: '1'
+          memory: 1G
+
+  interface-db:
+    image: postgres:latest
+    environment:
+      POSTGRES_DB: ${INTERFACE_DB_NAME}
+      POSTGRES_USER: ${INTERFACE_DB_USERNAME}
+      POSTGRES_PASSWORD: ${INTERFACE_DB_PASSWORD}
+    volumes:
+      - interfacevolume-data:/var/lib/postgresql/data
+      - ./db/init/interface.sql:/docker-entrypoint-initdb.d/interface.sql
+    ports:
+      - "${INTERFACE_DB_PORT}:5432"
+    networks:
+      - corninspect-net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${INTERFACE_DB_USERNAME} -d ${INTERFACE_DB_NAME}"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    restart: on-failure
+    deploy:
+      resources:
+        limits:
+          cpus: '1'
+          memory: 1G
+
+  pgadmin:
+    image: dpage/pgadmin4
+    environment:
+      PGADMIN_DEFAULT_EMAIL: ${PGADMIN_DEFAULT_EMAIL}
+      PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_DEFAULT_PASSWORD}
+    ports:
+      - "${PGADMIN_PORT}:80"
+    depends_on:
+      - users-db
+      - prediction-db
+    networks:
+      - corninspect-net
+    restart: on-failure
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 512M
+
+  ############# Microservice #################
+  user-service:
+    build: ./CORNINSPEC-DB
+    depends_on:
+      - users-db
+    env_file:
+      - .env
+    ports:
+      - "${USER_SERVICE_PORT}:3000"
+    networks:
+      - corninspect-net
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 500M
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "200k"
+        max-file: "10"
+    restart: on-failure
+
+  prediction-service:
+    build: ./CORNINSPEC-PREDICT
+    depends_on:
+      - prediction-db
+      - rabbitmq
+    env_file:
+      - .env
+    ports:
+      - "${PREDICT_SERVICE_PORT}:8006"
+    networks:
+      - corninspect-net
+    deploy:
+      resources:
+        limits:
+          cpus: '12'
+          memory: 16G # เพิ่มหน่วยความจำที่นี่
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "200k"
+        max-file: "10"
+    restart: on-failure
+
+  prediction-result-service:
+    build: ./CORNINSPEC-PREDICT_RESULT
+    depends_on:
+      - prediction-db
+      - rabbitmq
+    env_file:
+      - .env
+    ports:
+      - "${PREDICT_RESULT_PORT}:8007"
+    networks:
+      - corninspect-net
+    deploy:
+      resources:
+        limits:
+          cpus: '1'
+          memory: 1G
+    restart: on-failure
+
+  interface-service:
+    build: ./CORNINSPEC-INTERFACE
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+      interface-db:
+        condition: service_healthy
+    env_file:
+      - .env
+    ports:
+      - "${INTERFACE_SERVICE_PORT}:8008"
+    networks:
+      - corninspect-net
+    deploy:
+      resources:
+        limits:
+          cpus: '1'
+          memory: 1G
+    restart: on-failure
+
+networks:
+  corninspect-net:
+    driver: bridge
+
+volumes:
+  corninspecvolume-data:
+    driver: local
+  predictionvolume-data:
+    driver: local
+  interfacevolume-data:
+    driver: local
+  rabbitmq_data:
+    driver: local
