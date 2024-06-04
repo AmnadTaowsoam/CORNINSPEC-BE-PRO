@@ -96,12 +96,12 @@ class PredictResultProcessor:
             # Define the mapping of physical classes to numerical class identifiers
             phys_class_mapping = {
                 'goodseed': ['c1w'],
-                'phys003': ['c37w', 'c2w', 'c4w', 'c40w', 'c3w'],
-                'phys004': ['c6w'],
-                'phys005': ['c36w'],
-                'phys007': ['c38w', 'c39w'],
-                'phys008': ['c7w'],
-                'phys009': ['c5w']
+                'phys0003': ['c37w', 'c2w', 'c4w', 'c40w', 'c3w'],
+                'phys0004': ['c6w'],
+                'phys0005': ['c36w'],
+                'phys0007': ['c38w', 'c39w'],
+                'phys0008': ['c7w'],
+                'phys0009': ['c5w']
             }
             # Initialize results DataFrame with unique batch information
             base_cols = ['inslot', 'operationNo', 'batch', 'material', 'plant', 'sampleWeight']
@@ -119,7 +119,7 @@ class PredictResultProcessor:
                 results_df[phys] = results_df[phys].fillna(0) / results_df['sampleWeight'] * 100  # Normalize by sample weight
 
             # Add placeholder for 'phys006' if necessary
-            results_df['phys006'] = 0  # Assuming PHYS006 needs to be set to 0
+            results_df['phys0006'] = 0  # Assuming PHYS006 needs to be set to 0
             return results_df
         except Exception as e:
             logger.error(f"Error in processing the result interface: {e}")

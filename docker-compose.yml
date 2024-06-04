@@ -98,6 +98,31 @@ services:
           cpus: '1'
           memory: 1G
 
+  status-results-db:
+    image: postgres:latest
+    environment:
+      POSTGRES_DB: ${STATUS_RESULTS_DB_NAME}
+      POSTGRES_USER: ${STATUS_RESULTS_DB_USERNAME}
+      POSTGRES_PASSWORD: ${STATUS_RESULTS_DB_PASSWORD}
+    volumes:
+      - statusresultsvolume-data:/var/lib/postgresql/data
+      - ./db/init/status_result.sql:/docker-entrypoint-initdb.d/status_result.sql
+    ports:
+      - "${STATUS_RESULTS_DB_PORT}:5432"
+    networks:
+      - corninspect-net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${STATUS_RESULTS_DB_USERNAME} -d ${STATUS_RESULTS_DB_NAME}"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    restart: on-failure
+    deploy:
+      resources:
+        limits:
+          cpus: '1'
+          memory: 1G
+
   pgadmin:
     image: dpage/pgadmin4
     environment:
@@ -201,6 +226,24 @@ services:
           memory: 1G
     restart: on-failure
 
+  status-results-service:
+    build: ./CORNINSPEC-INTERFACE-RESULT
+    depends_on:
+      - status-results-db
+      - rabbitmq
+    env_file:
+      - .env
+    ports:
+      - "${STATUS_RESULTS_SERVICE_PORT}:8009"
+    networks:
+      - corninspect-net
+    deploy:
+      resources:
+        limits:
+          cpus: '1'
+          memory: 1G
+    restart: on-failure
+
 networks:
   corninspect-net:
     driver: bridge
@@ -211,6 +254,8 @@ volumes:
   predictionvolume-data:
     driver: local
   interfacevolume-data:
+    driver: local
+  statusresultsvolume-data:
     driver: local
   rabbitmq_data:
     driver: local

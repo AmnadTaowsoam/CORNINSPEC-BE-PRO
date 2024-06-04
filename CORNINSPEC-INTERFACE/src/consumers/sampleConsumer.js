@@ -1,36 +1,47 @@
 const amqp = require('amqplib');
 const axios = require('axios');
+const { getLatestTokenAndCookies } = require('../models/tokenModel');
 const { interfacePool } = require('../config/dbconfig');
+const { wrapper } = require('axios-cookiejar-support');
+const tough = require('tough-cookie');
 
-async function processEvent2(msg) {
+const cookieJar = new tough.CookieJar();
+const client = wrapper(axios.create({ jar: cookieJar }));
+
+async function sampleRequest(msg, channel) {
+    console.log('sampleRequest: Received message', msg.content.toString());
     const data = JSON.parse(msg.content.toString());
     const { requestRef } = data;
 
     try {
-        // Load the request details from the database using requestRef
+        console.log('Executing database query to fetch request data');
         const requestRes = await interfacePool.query('SELECT inslot, operationno FROM interface.interface_requests WHERE request_ref = $1', [requestRef]);
         const request = requestRes.rows[0];
-
-        if (!request) {
-            throw new Error('Request not found in the database');
-        }
+        if (!request) throw new Error('Request not found in the database');
 
         const { inslot, operationno } = request;
 
-        // Load the latest token from the database
-        const tokenRes = await interfacePool.query('SELECT token FROM interface.tokens ORDER BY created_at DESC LIMIT 1');
-        const token = tokenRes.rows[0]?.token;
+        console.log('Fetching latest token and cookies');
+        const tokenData = await getLatestTokenAndCookies();
+        const token = tokenData?.token;
+        const cookies = tokenData?.cookies;
+        if (!token || !cookies) throw new Error('Token or cookies not found in the database');
 
-        if (!token) {
-            throw new Error('Token not found in the database');
-        }
+        const headers = {
+            'APIKey': process.env.SAP_APIKEY,
+            'X-CSRF-Token': token,
+            'AppId': process.env.SAP_SAMPLES_APPID,
+            'Cookie': cookies,
+            'Content-Type': 'application/json'
+        };
 
-        const response = await axios.post(`${process.env.SAP_SAMPLES_ENDPOINT}`, {
+        console.log('Sending request to SAP endpoint with headers:', headers);
+        const response = await client.post(`${process.env.SAP_SAMPLES_ENDPOINT}`, {
             sampleData: {
-                requestRef: requestRef,
+                requestRef,
                 inspLot: inslot,
                 operation: operationno,
-                numSample: data.numSample || "",
+                numSample: data.numSample || "1",
                 sampleCat: data.sampleCat || "",
                 sampleCon: data.sampleCon || "",
                 sampleSize: data.sampleSize || "1",
@@ -41,41 +52,50 @@ async function processEvent2(msg) {
                 deadline: data.deadline || "",
                 days: data.days || ""
             }
-        }, {
-            headers: {
-                'APIKey': process.env.SAP_APIKEY,
-                'X-CSRF-Token': token,
-                'AppId': process.env.SAP_SAMPLES_APPID
-            }
-        });
+        }, { headers });
 
-        const sampleNo = response.data.samples.sampleNo[0].number;
-        const status = response.data.samples.status;
-        const message = response.data.samples.message;
+        console.log('SAP Response:', response.data);
 
+        const sampleResponse = response.data.samples;
+        if (!sampleResponse.sampleNo || sampleResponse.sampleNo.length === 0) {
+            throw new Error('Sample number not found in the response');
+        }
+        const sampleNo = sampleResponse.sampleNo[0].number;
+        const { status, message } = sampleResponse;
+
+        console.log('Extracted Sample Number:', sampleNo);
+
+        console.log('Inserting sample data into the database');
         await interfacePool.query(
-            'INSERT INTO interface.samples (request_ref, insp_lot, operation, sample_no, status, message) VALUES ($1, $2, $3, $4, $5, $6)', 
+            'INSERT INTO interface.samples (request_ref, insp_lot, operation, sample_no, status, message) VALUES ($1, $2, $3, $4, $5, $6)',
             [requestRef, inslot, operationno, sampleNo, status, message]
         );
 
-        console.log('Event 2: Sample number saved to database');
+        const nextQueue = 'predict_result_queue';
+        channel.sendToQueue(nextQueue, Buffer.from(JSON.stringify(data)));
+        console.log(`sampleRequest: Message sent to ${nextQueue}`);
+
     } catch (error) {
-        console.error('Error in Event 2:', error.message);
+        console.error('Error in sampleRequest:', error.message);
+        if (error.response) {
+            console.error('Error Response Data:', error.response.data);
+        }
     }
 }
 
-async function consumeEvent2() {
+async function consumeSampleRequest() {
+    console.log('consumeSampleRequest: Connecting to RabbitMQ');
     const connection = await amqp.connect(process.env.RABBITMQ_URL);
     const channel = await connection.createChannel();
-    const queue = 'event2_queue'; // กำหนดชื่อคิวตามการใช้งานจริง
+    const queue = 'sample_request_queue';
 
     await channel.assertQueue(queue, { durable: true });
     channel.consume(queue, async (msg) => {
-        await processEvent2(msg);
+        await sampleRequest(msg, channel);
         channel.ack(msg);
     });
 
     console.log('Event 2 Consumer started');
 }
 
-module.exports = consumeEvent2;
+module.exports = consumeSampleRequest;

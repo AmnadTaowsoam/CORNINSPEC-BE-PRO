@@ -17,9 +17,10 @@ CREATE TABLE IF NOT EXISTS interface.interface_requests (
 );
 
 -- Table for storing tokens
-CREATE TABLE IF NOT EXISTS interface.tokens (
+CREATE TABLE interface.tokens (
     id SERIAL PRIMARY KEY,
-    token VARCHAR(255) NOT NULL,
+    token TEXT NOT NULL,
+    cookies TEXT NOT NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -46,13 +47,13 @@ CREATE TABLE IF NOT EXISTS interface.inspections (
     plant VARCHAR(50) NOT NULL,
     operation VARCHAR(50) NOT NULL,
     sample_no VARCHAR(50),
-    phys003 VARCHAR(50),
-    phys004 VARCHAR(50),
-    phys005 VARCHAR(50),
-    phys006 VARCHAR(50),
-    phys007 VARCHAR(50),
-    phys008 VARCHAR(50),
-    phys009 VARCHAR(50),
+    phys0003 VARCHAR(50),
+    phys0004 VARCHAR(50),
+    phys0005 VARCHAR(50),
+    phys0006 VARCHAR(50),
+    phys0007 VARCHAR(50),
+    phys0008 VARCHAR(50),
+    phys0009 VARCHAR(50),
     status VARCHAR(10),
     message TEXT,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
@@ -60,26 +61,6 @@ CREATE TABLE IF NOT EXISTS interface.inspections (
 
 -- Index for quick lookup on request_ref in inspections table
 CREATE INDEX IF NOT EXISTS idx_inspections_request_ref ON interface.inspections(request_ref);
-
--- Table for storing status results
-CREATE TABLE IF NOT EXISTS interface.status_results (
-    id SERIAL PRIMARY KEY,
-    status VARCHAR(10) NOT NULL,
-    request_ref UUID REFERENCES interface.samples(request_ref),
-    insp_lot VARCHAR(50) NOT NULL,
-    operation VARCHAR(50) NOT NULL,
-    sample_no VARCHAR(50),
-    userc1 VARCHAR(50),
-    userc2 VARCHAR(50),
-    usern1 VARCHAR(50),
-    usern2 VARCHAR(50),
-    userd1 VARCHAR(50),
-    usert1 VARCHAR(50),
-    equipment VARCHAR(50),
-    funct_loc VARCHAR(50),
-    msg TEXT,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
 
 -- Index for quick lookup on request_ref in status_results table
 CREATE INDEX IF NOT EXISTS idx_status_results_request_ref ON interface.status_results(request_ref);

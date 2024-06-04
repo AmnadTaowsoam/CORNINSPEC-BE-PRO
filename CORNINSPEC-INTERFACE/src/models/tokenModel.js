@@ -1,11 +1,10 @@
-//src/models/tokenModel.js
 const { interfacePool } = require('../config/dbconfig');
 
 // CREATE
-const createToken = async (token) => {
+const createToken = async (token, cookies) => {
     const result = await interfacePool.query(
-        'INSERT INTO interface.tokens (token) VALUES ($1) RETURNING *',
-        [token]
+        'INSERT INTO interface.tokens (token, cookies) VALUES ($1, $2) RETURNING *',
+        [token, cookies]
     );
     return result.rows[0];
 };
@@ -16,11 +15,19 @@ const getTokens = async () => {
     return result.rows;
 };
 
-// UPDATE
-const updateToken = async (id, token) => {
+// READ latest token and cookies
+const getLatestTokenAndCookies = async () => {
     const result = await interfacePool.query(
-        'UPDATE interface.tokens SET token = $1 WHERE id = $2 RETURNING *',
-        [token, id]
+        'SELECT token, cookies FROM interface.tokens ORDER BY created_at DESC LIMIT 1'
+    );
+    return result.rows[0];
+};
+
+// UPDATE
+const updateToken = async (id, token, cookies) => {
+    const result = await interfacePool.query(
+        'UPDATE interface.tokens SET token = $1, cookies = $2 WHERE id = $3 RETURNING *',
+        [token, cookies, id]
     );
     return result.rows[0];
 };
@@ -33,6 +40,7 @@ const deleteToken = async (id) => {
 module.exports = {
     createToken,
     getTokens,
+    getLatestTokenAndCookies,
     updateToken,
     deleteToken,
 };

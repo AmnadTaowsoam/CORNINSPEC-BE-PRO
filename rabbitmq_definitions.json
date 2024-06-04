@@ -22,7 +22,28 @@
     ],
     "queues": [
         {
-            "name": "interface_queue",
+            "name": "login_sap_queue",
+            "vhost": "/",
+            "durable": true,
+            "auto_delete": false,
+            "arguments": {}
+        },
+        {
+            "name": "sample_request_queue",
+            "vhost": "/",
+            "durable": true,
+            "auto_delete": false,
+            "arguments": {}
+        },
+        {
+            "name": "predict_result_queue",
+            "vhost": "/",
+            "durable": true,
+            "auto_delete": false,
+            "arguments": {}
+        },
+        {
+            "name": "inspection_result_queue",
             "vhost": "/",
             "durable": true,
             "auto_delete": false,
@@ -44,9 +65,33 @@
         {
             "source": "interface_exchange",
             "vhost": "/",
-            "destination": "interface_queue",
+            "destination": "login_sap_queue",
             "destination_type": "queue",
-            "routing_key": "interface_routing_key",
+            "routing_key": "login_sap_routing_key",
+            "arguments": {}
+        },
+        {
+            "source": "interface_exchange",
+            "vhost": "/",
+            "destination": "sample_request_queue",
+            "destination_type": "queue",
+            "routing_key": "sample_request_routing_key",
+            "arguments": {}
+        },
+        {
+            "source": "interface_exchange",
+            "vhost": "/",
+            "destination": "predict_result_queue",
+            "destination_type": "queue",
+            "routing_key": "predict_result_routing_key",
+            "arguments": {}
+        },
+        {
+            "source": "interface_exchange",
+            "vhost": "/",
+            "destination": "inspection_result_queue",
+            "destination_type": "queue",
+            "routing_key": "inspection_result_routing_key",
             "arguments": {}
         }
     ]

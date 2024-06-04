@@ -1,37 +1,43 @@
 const amqp = require('amqplib');
 const axios = require('axios');
+const { getLatestTokenAndCookies } = require('../models/tokenModel');
 const { interfacePool } = require('../config/dbconfig');
+const { wrapper } = require('axios-cookiejar-support');
+const tough = require('tough-cookie');
 
-async function processEvent4(msg) {
+const cookieJar = new tough.CookieJar();
+const client = wrapper(axios.create({ jar: cookieJar }));
+
+async function inspectionResult(msg) {
+    console.log('inspectionResult: Received message', msg.content.toString());
     const data = JSON.parse(msg.content.toString());
-    const { request_ref } = data;
+    const { requestRef } = data;
+
+    if (!requestRef) {
+        console.error('inspectionResult: requestRef is undefined');
+        return;
+    }
 
     try {
-        // Query interface.inspections to get inspection data
-        const inspectionRes = await interfacePool.query('SELECT * FROM interface.inspections WHERE request_ref = $1', [request_ref]);
+        console.log(`inspectionResult: Querying interface.inspections with request_ref ${requestRef}`);
+        const inspectionRes = await interfacePool.query('SELECT * FROM interface.inspections WHERE request_ref = $1', [requestRef]);
         const inspectionData = inspectionRes.rows[0];
+        if (!inspectionData) throw new Error('Inspection data not found in the database');
+        console.log('inspectionResult: Fetched inspection data from interface.inspections', inspectionData);
 
-        if (!inspectionData) {
-            throw new Error('Inspection data not found in the database');
-        }
+        const tokenData = await getLatestTokenAndCookies();
+        const token = tokenData?.token;
+        const cookies = tokenData?.cookies;
+        if (!token || !cookies) throw new Error('Token or cookies not found in the database');
 
-        // Load the latest token from the database
-        const tokenRes = await interfacePool.query('SELECT token FROM interface.tokens ORDER BY created_at DESC LIMIT 1');
-        const token = tokenRes.rows[0]?.token;
-
-        if (!token) {
-            throw new Error('Token not found in the database');
-        }
-
-        // Prepare data for SAP
         const pointData = [
-            { mic: 'PHYS003', result: inspectionData.mic_phys003.toString() },
-            { mic: 'PHYS004', result: inspectionData.mic_phys004.toString() },
-            { mic: 'PHYS005', result: inspectionData.mic_phys005.toString() },
-            { mic: 'PHYS006', result: inspectionData.mic_phys006.toString() },
-            { mic: 'PHYS007', result: inspectionData.mic_phys007.toString() },
-            { mic: 'PHYS008', result: inspectionData.mic_phys008.toString() },
-            { mic: 'PHYS009', result: inspectionData.mic_phys009.toString() }
+            { mic: 'PHYS0003', result: inspectionData.phys0003.toString() },
+            { mic: 'PHYS0004', result: inspectionData.phys0004.toString() },
+            { mic: 'PHYS0005', result: inspectionData.phys0005.toString() },
+            { mic: 'PHYS0006', result: inspectionData.phys0006.toString() },
+            { mic: 'PHYS0007', result: inspectionData.phys0007.toString() },
+            { mic: 'PHYS0008', result: inspectionData.phys0008.toString() },
+            { mic: 'PHYS0009', result: inspectionData.phys0009.toString() }
         ];
 
         const sapData = {
@@ -48,32 +54,42 @@ async function processEvent4(msg) {
             }
         };
 
-        const response = await axios.post(`${process.env.SAP_URL}/interface-sap`, sapData, {
-            headers: {
-                'APIKey': process.env.API_KEY,
-                'X-CSRF-Token': token,
-                'AppId': 'BTG-AGROQA-01'
-            }
-        });
+        console.log('inspectionResult: SAP-data:', sapData);
 
-        console.log('Event 4: Data sent to SAP', response.data);
+        const headers = {
+            'APIKey': process.env.SAP_APIKEY,
+            'X-CSRF-Token': token,
+            'AppId': process.env.SAP_INSPECTION_RESULT_APPID,
+            'Cookie': cookies,
+            'Content-Type': 'application/json'
+        };
+
+        console.log('inspectionResult: Sending data to SAP with headers:', headers);
+
+        const response = await client.put(`${process.env.SAP_INSPECTION_RESULT_ENDPOINT}`, sapData, { headers });
+
+        console.log('inspectionResult: Data sent to SAP', response.data);
     } catch (error) {
-        console.error('Error in Event 4:', error.message);
+        console.error('Error in inspectionResult:', error.message);
+        if (error.response) {
+            console.error('Error Response Data:', error.response.data);
+        }
     }
 }
 
-async function consumeEvent4() {
+async function consumeInspectionResult() {
+    console.log('consumeInspectionResult: Connecting to RabbitMQ');
     const connection = await amqp.connect(process.env.RABBITMQ_URL);
     const channel = await connection.createChannel();
-    const queue = 'event4_queue'; // กำหนดชื่อคิวตามการใช้งานจริง
+    const queue = 'inspection_result_queue';
 
     await channel.assertQueue(queue, { durable: true });
     channel.consume(queue, async (msg) => {
-        await processEvent4(msg);
+        await inspectionResult(msg);
         channel.ack(msg);
     });
 
     console.log('Event 4 Consumer started');
 }
 
-module.exports = consumeEvent4;
+module.exports = consumeInspectionResult;
