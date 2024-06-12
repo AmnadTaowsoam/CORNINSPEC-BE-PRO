@@ -1,23 +1,19 @@
 // middleware/authenticateToken.js
-const jwt = require('jsonwebtoken');
+require('dotenv').config();
 
 function authenticateToken(req, res, next) {
-    const authHeader = req.headers['authorization'];
-    const token = authHeader && authHeader.startsWith('Bearer ') ? authHeader.split(' ')[1] : null;
+    const apiKey = req.headers['x-api-key'];
 
-    if (token == null) {
-        return res.status(401).json({ message: 'Authentication token is required.' });
+    if (!apiKey) {
+        return res.status(401).json({ message: 'API Key is required.' });
     }
 
-    jwt.verify(token, process.env.ACCESS_TOKEN_SECRET, (err, user) => {
-        if (err) {
-            return res.status(403).json({ message: 'Invalid or expired token.' });
-        }
-        req.user = user;
-        next();
-    });
+    if (apiKey !== process.env.API_KEY) {
+        return res.status(403).json({ message: 'Invalid API Key.' });
+    }
+
+    next();
 }
 
 module.exports = { authenticateToken };
-
 

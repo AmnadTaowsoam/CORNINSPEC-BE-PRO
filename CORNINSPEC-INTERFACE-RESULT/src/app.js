@@ -28,18 +28,19 @@ app.use(rateLimit({
 app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({ extended: true }));
 
-const authRoutes = require('./routes/authRoutes');
 const statusResultsRoutes = require('./routes/statusResultsRoutes');
 
-app.use('/api/auth', authRoutes);
-app.use('/status-results', statusResultsRoutes);
+// Remove authRoutes as they are no longer needed
+// app.use('/api/auth', authRoutes);
+
+app.use('/status-results', authenticateToken, statusResultsRoutes);
 
 app.use((err, req, res, next) => {
     console.error(err.stack);
     res.status(500).send({ message: 'Something broke!', error: err.message });
 });
 
-const PORT = process.env.STATUS_RESULTS_SERVICE_PORT || 8009;
+const PORT = process.env.STATUS_RESULTS_SERVICE_PORT || 8005;
 app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
 
 schedule.scheduleJob('0 0 * * *', async () => {

@@ -81,7 +81,7 @@ async function predictResult(msg, channel) {
 
         console.log('predictResult: Fetched results from PREDICT_RESULT_SERVICE', results);
         const averageResults = {
-            phys0003: results.reduce((sum, r) => sum + parseFloat(r.phys0001 || 0), 0) / results.length,
+            phys0003: results.reduce((sum, r) => sum + parseFloat(r.phys0003 || 0), 0) / results.length,
             phys0004: results.reduce((sum, r) => sum + parseFloat(r.phys0004 || 0), 0) / results.length,
             phys0005: results.reduce((sum, r) => sum + parseFloat(r.phys0005 || 0), 0) / results.length,
             phys0006: results.reduce((sum, r) => sum + parseFloat(r.phys0006 || 0), 0) / results.length,
